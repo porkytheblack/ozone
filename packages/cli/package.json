@@ -1,24 +1,35 @@
 {
-  "name": "cli",
-  "version": "1.0.0",
+  "name": "ozone-cli",
+  "version": "0.0.1",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "ozone-cli": "./dist/index.js"
+  },
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsup",
+    "prepare": "rm -rf dist && npm run build"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/degit": "^2.8.6",
     "@types/node": "^22.14.1",
     "tsup": "^8.4.0",
     "typescript": "^5.8.3"
   },
   "dependencies": {
     "commander": "^13.1.0",
+    "degit": "^2.8.4",
     "ozone-builder": "workspace:*",
     "ozone-model": "workspace:*",
-    "ozone-router": "workspace:*"
+    "ozone-router": "workspace:*",
+    "simple-git": "^3.27.0"
   }
 }
