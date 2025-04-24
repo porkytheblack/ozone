@@ -1,6 +1,6 @@
 {
   "name": "ozone-cli",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -13,7 +13,8 @@
   "type": "module",
   "scripts": {
     "build": "tsup",
-    "prepare": "rm -rf dist && npm run build"
+    "prepare": "rm -rf dist && npm run build",
+    "dev": "tsx ./src/index.ts"
   },
   "keywords": [],
   "author": "",

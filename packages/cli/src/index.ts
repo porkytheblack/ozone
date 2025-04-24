@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { program } from "commander"
 import simpleGit from 'simple-git'
 import degit from 'degit'
@@ -8,12 +9,14 @@ program.name("ozone-cli")
     .version("0.0.1")
 
 program.command("init")
-    .argument('<directory>', 'Target directory to create the project in', '.')
+    .option('-t, --target <target>', 'Target directory', '.')
     .option('-n, --name <project_name>', 'Project Name', 'ozone-agents')
-    .action(async (directory, opts) => {
+    .action(async (args, opts) => {
         try {
-            const name = opts.name ? opts.name : ''
-            const target = path.resolve(process.cwd(), directory, name)
+
+            const name = args.name ? args.name : ''
+            const dir = args.target ? args.target : '.'
+            const target = path.resolve(process.cwd(), dir, name)
 
             const emitter = degit("github:porkytheblack/ozone/packages/scaffold", {
                 cache: false,
