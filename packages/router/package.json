@@ -18,6 +18,6 @@
   },
   "dependencies": {
     "effect": "^3.14.14",
-    "ozone-model": "workspace:*"
+    "ozone-model": "^0.0.1"
   }
 }

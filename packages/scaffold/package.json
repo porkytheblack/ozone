@@ -1,26 +1,31 @@
 {
-  "name": "ozone-builder",
-  "version": "0.0.2",
+  "name": "scaffold",
+  "version": "1.0.0",
   "description": "",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "index.js",
   "type": "module",
   "scripts": {
+    "dev": "tsx ./app/server/index.ts",
     "build": "tsup"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
     "@types/node": "^22.14.1",
-    "tsup": "^8.4.0",
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
     "effect": "^3.14.14",
+    "express": "^5.1.0",
+    "ozone-builder": "^0.0.2",
     "ozone-model": "^0.0.1",
     "ozone-router": "^0.0.1",
-    "zod": "^3.24.3",
-    "zod-to-json-schema": "^3.24.5"
+    "tsup": "^8.4.0",
+    "zod": "^3.24.3"
   }
 }

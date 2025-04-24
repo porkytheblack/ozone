@@ -12,12 +12,13 @@
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^22.14.1",
+    "tsup": "^8.4.0",
     "typescript": "^5.8.3"
   },
   "dependencies": {
     "commander": "^13.1.0",
-    "ozone-model": "workspace:*",
     "ozone-builder": "workspace:*",
+    "ozone-model": "workspace:*",
     "ozone-router": "workspace:*"
   }
 }
