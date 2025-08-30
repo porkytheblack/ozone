@@ -1,6 +1,6 @@
 {
   "name": "ozone-builder",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "effect": "^3.14.14",
-    "ozone-model": "^0.0.1",
+    "ozone-model": "^0.0.2",
     "ozone-router": "^0.0.1",
     "zod": "^3.24.3",
     "zod-to-json-schema": "^3.24.5"

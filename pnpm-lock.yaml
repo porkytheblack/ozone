@@ -14,8 +14,8 @@ importers:
         specifier: ^3.14.14
         version: 3.14.14
       ozone-model:
-        specifier: ^0.0.1
-        version: 0.0.1
+        specifier: ^0.0.2
+        version: 0.0.2
       ozone-router:
         specifier: ^0.0.1
         version: 0.0.1
@@ -819,6 +819,9 @@ packages:
 
   ozone-model@0.0.1:
     resolution: {integrity: sha512-oKCZFwK0bH+DZT32lGucvsJnr9JjjeYMSzQ0PkraaLdHjzI/hVq5TQEU4OeVM1cjvbJ8cdnQ5CqAi1YbjPLU/w==}
+
+  ozone-model@0.0.2:
+    resolution: {integrity: sha512-UPTlaHugdDSOp6277LTA1cITYaCA+y+lOGrkEjKXGo+taZ4AK5rX2+GLJ1qYfvX8sdpE/wwjZiA4DfU0hEs3kQ==}
 
   ozone-router@0.0.1:
     resolution: {integrity: sha512-0hYfwdoeSqxcN15UliK/eaTZXlzffnivMdC45zk9emURtZJPvcEJ8AP3z56m6kevb+PSgAj8lbyoNQt3bTsw1A==}
@@ -1667,6 +1670,10 @@ snapshots:
       zod-to-json-schema: 3.24.5(zod@3.24.3)
 
   ozone-model@0.0.1:
+    dependencies:
+      effect: 3.14.14
+
+  ozone-model@0.0.2:
     dependencies:
       effect: 3.14.14
 
