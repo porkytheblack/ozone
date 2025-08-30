@@ -16,6 +16,7 @@ export interface ModelOutput {
     role?: "user" | "assistant" | "system"
     answer: string | undefined;
     toolResponses?: Array<{ name: string, args: Record<string, any>, id?: string }> | undefined
+    toolCallResults?: Array<{ id: string, tool: string, content: string }>
 }
 
 export class Model {
