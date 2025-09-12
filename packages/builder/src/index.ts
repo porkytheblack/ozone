@@ -16,14 +16,17 @@ export enum EXECUTION_SIGNALS {
     AMBIGUOUS_TOOL_RESPONSE = 7,
     TOOL_ERROR = 8,
     AGENT_HANDOVER = 9,
-    INVALID_TOOLS_SELECTED = 10
+    INVALID_TOOLS_SELECTED = 10,
+    LOOP_END = 11,
+    LOOP_CONTINUE = 12,
+    LOOP_STOP = 13
 }
 
 
 interface StepResult<T = any> {
     SIGNAL: EXECUTION_SIGNALS,
     data: T,
-    executor?: "Input" | "Next" | "Evaluator" | "StepGenerator"
+    executor?: "Input" | "Next" | "Evaluator" | "StepGenerator" | "Loop"
 }
 
 export class ExecutionStackError extends TaggedError("ExecutionStackError")<{stepResult: TaggedStepResult}> {}
@@ -45,7 +48,7 @@ export class TaggedStepResult extends Data.TaggedClass("StepResult")<StepResult>
 
 export const createStepResult = (input: StepResult) => new TaggedStepResult(input)
 
-type Tool<T = any> = {
+export type Tool<T = any> = {
     name: string,
     description: string,
     schema: z.ZodTypeAny,
@@ -98,6 +101,135 @@ export class Prompt {
 
         return model_input
     }
+
+    async process(data: ModelOutput, agent: AgentBuilder) {
+        if ((this.tools?.length ?? 0) == 0) {
+            await agent.addChatHistory(data)
+        } else {
+            data.toolCallResults = []
+
+            if ((data.toolResponses?.length ?? 0) == 0) {
+                agent.addChatHistory(data)
+            } else {
+                const valid_tool_names = this.tools?.map(t => t.name) ?? []
+                const invalid_tools = data.toolResponses?.filter(t => !valid_tool_names.includes(t.name))
+
+                if ((invalid_tools?.length ?? 0) > 0) {
+                    return new TaggedStepResult({
+                        data,
+                        SIGNAL: EXECUTION_SIGNALS.INVALID_TOOLS_SELECTED,
+                        executor: 'Input'
+                    })
+                }
+
+                const toolAndResponse: Array<{ tool: Tool<any>, response: { name: string, args: Record<string, any>, id?: string }, data: Record<string, any> }> = []
+
+                for (const tool of (this.tools ?? [])) {
+                    const matching_response = data.toolResponses?.find(t => t.name == tool.name)
+
+                    if (!matching_response) continue;
+
+                    const parsed = tool.schema.safeParse(matching_response.args)
+
+                    if (!parsed.success) return new TaggedStepResult({
+                        data: { message: "Unable to parse response" },
+                        SIGNAL: EXECUTION_SIGNALS.TOOL_VALIDATION_FAILED,
+                        executor: this.__tag
+                    })
+
+
+                    toolAndResponse.push({
+                        tool,
+                        response: matching_response,
+                        data: parsed.data
+                    })
+                }
+
+
+                for (const { tool, response, data: toolData } of toolAndResponse) {
+
+                    const tool_execution_effect = Effect.either(Effect.tryPromise({
+                        try: async () => {
+                            const result = await tool.handle(toolData)
+                            return result
+                        },
+                        catch(error) {
+                            return new ExecutionStackError({
+                                stepResult: new TaggedStepResult({
+                                    data: error,
+                                    SIGNAL: EXECUTION_SIGNALS.TOOL_ERROR,
+                                    executor: 'Input'
+                                })
+                            })
+                        },
+                    }))
+
+
+                    const result = await Effect.runPromise(tool_execution_effect)
+
+
+                    Either.match(result, {
+                        onLeft(left) {
+                            return new TaggedStepResult({
+                                data: left,
+                                SIGNAL: EXECUTION_SIGNALS.ERROR,
+                                executor: "Input"
+                            })
+                        },
+                        onRight(right) {
+                            data.toolCallResults?.push({
+                                id: response.id ?? "_tool",
+                                content: JSON.stringify(right),
+                                tool: response.name
+                            })
+                        },
+                    })
+
+                }
+
+                await agent.addChatHistory(data)
+            }
+        }
+        return new TaggedStepResult({
+            data,
+            SIGNAL: EXECUTION_SIGNALS.CONTINUE,
+            executor: this.__tag
+        })
+    }
+}
+
+export class GlobalState {
+    __tag = "GlobalState" as const
+    private state: Map<string, unknown> = new Map()
+
+    constructor() { }
+
+    set(key: string, value: unknown) {
+        this.state.set(key, value)
+    }
+
+    get(key: string) {
+        this.state.get(key)
+    }
+}
+
+enum LoopType {
+    START = 1,
+    STOP = 2,
+    BREAK = 3,
+    CONTINUE = 4
+}
+
+export class Loop {
+    __tag = "Loop" as const
+    loop_type: LoopType
+    runs: number = 0
+
+    constructor(loop_type: LoopType) {
+        this.loop_type = loop_type
+    }
+
+
 }
 
 const reasonSchema = z.object({
@@ -256,19 +388,24 @@ export class AgentBuilder<TOutput = any>{
     private _name?: string
     private _description?: string
     private preDefinedTriggerPrompt?: string
-    private onChatHistoryUpdateHandler?: (chat: ModelOutput) => Promise<void>
-    private historyLoader?: () => Promise<Array<ModelOutput>>
+    private onChatHistoryUpdateHandler?: (chat: ModelOutput, session_id?: string) => Promise<void>
+    private historyLoader?: (session_id?: string) => Promise<Array<ModelOutput>>
+    private sessionId?: string
 
 
 
     constructor(
         router: Router,
         maxRetries: number | undefined = 3,
-        useHistory: boolean | undefined = false,
+        useHistory: boolean | undefined = false
     ) {
         this.router = router 
         this.maxRetries = maxRetries
         this.useHistory = useHistory
+    }
+
+    setSessionId(session_id: string) {
+        this.sessionId = session_id
     }
 
     // load previous conversation history
@@ -277,7 +414,7 @@ export class AgentBuilder<TOutput = any>{
             await Effect.runPromise(
                 Effect.tryPromise({
                     try: async () => {
-                        const history = await this.historyLoader!()
+                        const history = await this.historyLoader!(this.sessionId)
                         this.conversationHistory = history
                     },
                     catch(e) {
@@ -316,11 +453,11 @@ export class AgentBuilder<TOutput = any>{
         this._onStepComplete?.(step)
     }
 
-    addInitLoader(func: () => Promise<Array<ModelOutput>>) {
+    addInitLoader(func: (session_id?: string) => Promise<Array<ModelOutput>>) {
         this.historyLoader = func
     }
 
-    addUpdater(func: (data: ModelOutput) => Promise<void>) {
+    addUpdater(func: (data: ModelOutput, session_id?: string) => Promise<void>) {
         this.onChatHistoryUpdateHandler = func
     }
 
@@ -330,7 +467,7 @@ export class AgentBuilder<TOutput = any>{
         if (this.onChatHistoryUpdateHandler) {
             await Effect.runPromise(Effect.tryPromise({
                 try: async () => {
-                    await this.onChatHistoryUpdateHandler!(data)
+                    await this.onChatHistoryUpdateHandler!(data, this.sessionId)
                 },
                 catch(error) {
                     console.log("CHAT HISTORY UPDATE ERROR::", error)
@@ -338,6 +475,14 @@ export class AgentBuilder<TOutput = any>{
             }))
         }
 
+    }
+
+    get history() {
+        return this.conversationHistory
+    }
+
+    clearHistory() {
+        this.conversationHistory = []
     }
 
     onStepComplete(_onStepComplete: (result: TaggedStepResult) => void) {
@@ -394,7 +539,7 @@ export class AgentBuilder<TOutput = any>{
         return this
     }
 
-    private getNextEffect(router: Router, input: any, executor: Prompt | Next | Evaluator | StepGenerator, builder: AgentBuilder, step?: number) {
+    private getNextEffect(router: Router, input: any, executor: Prompt | Next | Evaluator | StepGenerator | Loop, builder: AgentBuilder, step?: number, remaining_stack_steps?: Array<(Next | Prompt | Evaluator | StepGenerator | Loop)>) {
         const chatHistory = builder.useHistory == false ? [] : builder.conversationHistory
 
         switch(executor.__tag){
@@ -450,6 +595,17 @@ export class AgentBuilder<TOutput = any>{
                     }))
                 )
             }
+            case "Loop": {
+                const loop_steps = remaining_stack_steps?.reduce((loop_steps_arr, curr) => {
+                    const last_step = loop_steps_arr.at(-1)
+                    if (!last_step || !(last_step?.__tag == "Loop" && (last_step.loop_type == LoopType.STOP || last_step.loop_type == LoopType.BREAK))) {
+                        return loop_steps_arr.concat(curr)
+                    }
+                    return loop_steps_arr
+                }, [] as Array<(Next | Prompt | Evaluator | StepGenerator | Loop)>)
+
+                // const runner = Effec
+            }
             default: {
                 return Effect.fail(new ExecutionStackError({
                     stepResult: new TaggedStepResult({
@@ -494,6 +650,7 @@ export class AgentBuilder<TOutput = any>{
         }
 
         const next = stack.pop()!
+        const remaining_stack_steps = [...stack]
         const step_effect: Effect.Effect<ModelOutput | {output: ModelOutput, input: any} | TaggedStepResult, ExecutionStackError | any> = this.getNextEffect(this.router, prevStep.data, next, this, step)
         const result = await Effect.runPromise(Effect.either(
                 step_effect
@@ -512,198 +669,8 @@ export class AgentBuilder<TOutput = any>{
                     return right
                 }
 
-                if (next.__tag == "StepGenerator") {
-                    const toolResponse = (right as ModelOutput)?.toolResponses?.at(0)
-
-                    if (!toolResponse || toolResponse.name !== "runSteps") {
-                        return new TaggedStepResult({
-                            data: right,
-                            SIGNAL: EXECUTION_SIGNALS.NO_TOOL_RESPONSE,
-                            executor: "StepGenerator"
-                        })
-                    }
-
-                    const argsValidation = runSteps.safeParse(toolResponse.args)
-
-                    if (!argsValidation.success) {
-                        return new TaggedStepResult({
-                            data: {
-                                toolResponse,
-                                error: argsValidation.error.flatten().fieldErrors
-                            },
-                            SIGNAL: EXECUTION_SIGNALS.TOOL_VALIDATION_FAILED,
-                            executor: 'StepGenerator'
-                        })
-                    }
-                    console.log("Validation success")
-
-                    const chosenSteps = argsValidation.data;
-
-                    const n = next as StepGenerator;
-
-                    const agents = chosenSteps.steps.map((step) => {
-                        const spec = n.agents.find((agent) => step.agentName == agent.name)
-                        if (!spec) return undefined;
-                        return {
-                            spec,
-                            step
-                        }
-                    })?.filter(a => a !== undefined)
-
-                    const newExecutionStack = agents.reverse().map((agent_spec) => {
-                        const agent = agent_spec.spec.agent;
-                        const currentExecutionStack = agent.executionStack;
-                        (currentExecutionStack.at(0) as Prompt).prePrompt = agent_spec.step.agentInstruction;
-                        console.log("Instruction::", agent_spec.step.agentInstruction)
-                        return currentExecutionStack.reverse()
-                    }).flat()
-
-                    stack = stack.concat(newExecutionStack)
-
-                    return new TaggedStepResult({
-                        SIGNAL: EXECUTION_SIGNALS.CONTINUE,
-                        data: undefined,
-                        executor: "StepGenerator"
-                    })
-
-                }
-
-                // in this case we know we're either dealing with an evaluator or a prompt, so we can handle validation of the output here in case it's a prompt using tools or an evaluation result and
-                if (next.__tag == "Evaluator") { // handle evaluator
-                    var temp = right as { output: ModelOutput, input: string };
-                    const validationResponse = temp.output.toolResponses?.at(0)
-                    if (!validationResponse) {
-                        return new TaggedStepResult({
-                            data: temp,
-                            SIGNAL: EXECUTION_SIGNALS.ERROR,
-                            executor: 'Evaluator'
-                        })
-                    }
-
-                    if (validationResponse.name == "isCorrect") {
-                        return new TaggedStepResult({
-                            data: temp.input,
-                            SIGNAL: EXECUTION_SIGNALS.CONTINUE,
-                            executor: 'Evaluator'
-                        })
-                    }
-
-                    if (validationResponse.name == "isWrong") {
-                        return new TaggedStepResult({
-                            data: temp,
-                            SIGNAL: EXECUTION_SIGNALS.EVALUATION_FAILED,
-                            executor: 'Evaluator'
-                        })
-                    }
-
-                    return new TaggedStepResult({
-                        data: temp,
-                        SIGNAL: EXECUTION_SIGNALS.ERROR,
-                        executor: 'Evaluator'
-                    })
-                }
-
-                if (next.__tag == "Input" && (next.tools?.length ?? 0) > 0) { // handle tool responses
-                    // cut down on ambiguity single tool responses only //maybe error out if ambiguity is detected
-                    // const toolResponse = (right as ModelOutput)?.toolResponses?.at(0)
-                    const model_output = right as ModelOutput
-                    model_output.toolCallResults = []
-                    if ((model_output.toolResponses?.length ?? 0) == 0) {
-
-                        return new TaggedStepResult({
-                            data: right,
-                            SIGNAL: EXECUTION_SIGNALS.NO_TOOL_RESPONSE,
-                            executor: 'Input'
-                        })
-                    }
-                    const valid_tool_names = next.tools?.map(t => t.name) ?? []
-                    const invalidTools = model_output.toolResponses?.filter((t) => !valid_tool_names.includes(t.name))
-
-
-                    if ((invalidTools?.length ?? 0) > 0) {
-                        return new TaggedStepResult({
-                            data: right,
-                            SIGNAL: EXECUTION_SIGNALS.INVALID_TOOLS_SELECTED,
-                            executor: 'Input'
-                        })
-                    }
-
-                    const toolAndResponse: Array<{ tool: Tool<any>, response: { name: string, args: Record<string, any>, id?: string }, data: Record<string, any> }> = []
-
-                    for (const tool of (next.tools ?? [])) {
-                        const matching_response = model_output.toolResponses?.find(t => t.name == tool.name)
-                        if (!matching_response) continue;
-
-                        const parsed = tool.schema.safeParse(matching_response.args)
-
-
-                        if (!parsed.success) return new TaggedStepResult({
-                            data: { message: "Unable to parse response" },
-                            SIGNAL: EXECUTION_SIGNALS.TOOL_VALIDATION_FAILED,
-                            executor: "Input"
-                        })
-
-
-                        toolAndResponse.push({
-                            tool,
-                            response: matching_response,
-                            data: parsed.data
-                        })
-                    }
-
-                    for (const { tool, response, data } of toolAndResponse) {
-
-                        const tool_execution_effect = Effect.either(Effect.tryPromise({
-                            try: async () => {
-                                // just a normal result maybe an object or somthing
-                                const result = await tool.handle(data)
-                                return result
-
-                            },
-                            catch(error) {
-                                return new ExecutionStackError({
-                                    stepResult: new TaggedStepResult({
-                                        data: error,
-                                        SIGNAL: EXECUTION_SIGNALS.TOOL_ERROR,
-                                        executor: 'Input'
-                                    })
-                                })
-                            },
-                        }))
-
-                        const result = await Effect.runPromise(tool_execution_effect)
-
-
-                        Either.match(result, {
-                            onLeft(left) {
-                                return new TaggedStepResult({
-                                    data: left,
-                                    SIGNAL: EXECUTION_SIGNALS.ERROR,
-                                    executor: "Input"
-                                })
-                            },
-                            onRight(right) {
-                                model_output.toolCallResults?.push({
-                                    id: response.id ?? "_tool",
-                                    content: JSON.stringify(right),
-                                    tool: response.name
-                                })
-                            },
-                        })
-
-                    }
-
-                    this.conversationHistory.push(model_output)
-
-                    return new TaggedStepResult({
-                        data: model_output,
-                        SIGNAL: EXECUTION_SIGNALS.CONTINUE,
-                        executor: "Input"
-                    })
-                }
-
                 if (next.__tag == "Input") {
-                    this.conversationHistory.push(right as ModelOutput)
+                    await next.process(right as ModelOutput, this)
                 }
 
                 return new TaggedStepResult({
@@ -759,11 +726,34 @@ export class AgentBuilder<TOutput = any>{
         triggerPrompt: string
     ) {
         const reversedQueue = [...this.executionStack].reverse() // reverse order so that we can use pop when we run the stack
+        // trigger history update with user's prompt
+        if (this.onChatHistoryUpdateHandler) {
+            await Effect.runPromise(Effect.tryPromise({
+                try: async () => {
+                    await this.onChatHistoryUpdateHandler!({
+                        role: "user",
+                        answer: triggerPrompt
+                    }, this.sessionId)
+                },
+                catch(e) {
+                    throw new Error("Failed to update history with user prompt")
+                }
+            }))
+        }
+
         const initialStepResult = new TaggedStepResult({
             data: triggerPrompt ?? this.preDefinedTriggerPrompt,
             SIGNAL: EXECUTION_SIGNALS.CONTINUE
         })
-        return await this.runStack(initialStepResult, reversedQueue, undefined)
+        const result = await this.runStack(initialStepResult, reversedQueue, undefined)
+
+        const updatedHistoryWithUserPrompt = [{
+            role: "user",
+            answer: triggerPrompt
+        } as ModelOutput, ...this.conversationHistory]
+        this.conversationHistory = updatedHistoryWithUserPrompt
+
+        return result
     }
 
 }
