@@ -1,11 +1,9 @@
 import { z } from "zod"
 import { Router } from "ozone-router"
 import { AgentRouter } from "ozone-agent-router"
-import { AgentBuilder, EXECUTION_SIGNALS, TaggedStepResult, Tool } from "ozone-builder"
-import zodToJsonSchema from "zod-to-json-schema"
-import { ModelOutput } from "ozone-model"
+import { AgentBuilder, PipelineOutput, TaggedStepResult } from "ozone-builder"
 import { randomBytes } from "crypto"
-import { extractSummary } from "./utills"
+import { Tool } from "ozone-tool"
 
 
 const planIntentExecution = z.object({
@@ -24,23 +22,26 @@ const beginStep = z.object({
     stepPrompt: z.string()
 })
 
-
-const markStepAsDone = z.object({
-    step: z.string(),
-    reason: z.string()
-})
-
-const markStepAsFailed = z.object({
-    step: z.string(),
-    reason: z.string()
-})
-
-const repeatPreviousStep = z.object({
-    newPrompt: z.string()
+const beginStepTool = Tool.create({
+    name: "begin_step",
+    description: "Create an appropriate prompt for the next step in the execution flow, using details from the previous step to provide additional context",
+    schema: beginStep,
+    handle: async (data) => {
+        return data
+    }
 })
 
 const summarizeOnCompletion = z.object({
     summary: z.string()
+})
+
+const summarizeTool = Tool.create({
+    name: "summarize",
+    description: "Summarize the exection flow",
+    schema: summarizeOnCompletion,
+    handle: async (data) => {
+        return data
+    },
 })
 
 
@@ -87,7 +88,7 @@ interface PlannerExecutorArgs {
     maxRetries: number | undefined,
     getPlannerInstructions?: (router: AgentRouter)=> string,
     plannerPromptExamples?: string,
-    getPlannerTools?: (executor: PlannerExecutor)=> Array<Tool>
+    getPlannerTools?: (executor: PlannerExecutor) => Array<Tool<any>>
 }
 
 export class PlannerExecutor {
@@ -96,7 +97,7 @@ export class PlannerExecutor {
     steps: Array<PlannedStep> = []
     router: AgentRouter
     plannerPrompt: string | undefined
-    plannerTools: Array<Tool> | undefined
+    plannerTools: Array<Tool<any>> | undefined
     plannerToolExamples: string | undefined
 
     constructor(
@@ -239,71 +240,39 @@ export class PlannerExecutor {
             - Ensure agent has all necessary context to succeed
             `,
             tools: this.plannerTools ?? [
-                {
-                    args: zodToJsonSchema(planIntentExecution),
-                    description:`Plan the steps required to successfuly execute the user's intent `,
-                    name: 'planIntentExecution',
+                Tool.create({
+                    name: "planner",
+                    description: "Create an execution plan for the user's intent",
                     schema: planIntentExecution,
-                    handle: async (args: z.infer<typeof planIntentExecution>) => {
-                        // modify steps
-                        
-                        const steps = args?.steps?.map((step)=>{
-                            // const agent = this.router.get(step.agent)
-
+                    handle: async (data) => {
+                        this.steps = data.steps?.map((s) => {
                             return new PlannedStep({
-                                agent: step.agent,
-                                completion_criteria: step.completion_criteria,
-                                description: step.description,
-                                name: step.name,
-                                stepIndex: step.stepIndex
+                                name: s.name,
+                                description: s.description,
+                                agent: s.agent,
+                                completion_criteria: s.completion_criteria,
+                                stepIndex: s.stepIndex
                             })
-                        
                         })
-
-                        // console.log("Steps ::", steps)
-
-                        this.steps = steps
-                        
-                        return {
-                            steps: this.steps
-                        }
+                        return data
                     },
-                },
-                {
-                    args: zodToJsonSchema(summarizeOnCompletion),
-                    description: `Once successful or unsuccessful execution of the stack is complete, summarize the details of execution to make it easier for the user to understand`,
-                    name: 'summarizeOnCompletion',
-                    schema: summarizeOnCompletion,
-                    handle(args) {
-                        // modify execution stack
-                        return args
-                    },
-                },
-                {
-                    args: zodToJsonSchema(beginStep),
-                    description: `Provide a prompt with all relevant context for the next agent to successfully complete`,
-                    name: 'beginStep',
-                    schema: beginStep,
-                    handle: async (args) => {
-                        // console.log("Step prompt::\n\n", JSON.stringify(args), "\n\n")
-                        return args
-                    }
-                }
+                }),
+                summarizeTool,
+                beginStepTool
             ]
         })
     }
 
 
     async run(prompt: string){
-        
-        const stepResult = await this.agent.run(prompt)
-
-        const steps = stepResult?.data?.steps as Array<PlannedStep>
+        await this.agent.run(prompt)
+        if (this.steps.length == 0) {
+            throw new Error("No steps were generated")
+        }
 
         const promptResult = await this.agent.run("determine a prompt for executing the first step")
 
-        const initialPrompt = promptResult?.data?.stepPrompt ?? promptResult?.data?.conent ?? ""
-
+        const initialPrompt = (promptResult?.at(0)?.data as z.infer<typeof beginStep>)?.stepPrompt ?? promptResult?.at(0)?.data
 
         const summary = await this.executeStep(initialPrompt)
 
@@ -311,33 +280,30 @@ export class PlannerExecutor {
     }
 
 
-    async executeStep(prompt: string): Promise<any>{
-        // grab first pending step
-        const step = this.steps.sort((a,b)=>a.stepIndex-b.stepIndex).find((v)=>v.status == "pending")
-        if(!step) {
-            // means we've reached the end of the step execution stack
+    async executeStep(prompt: string, end?: boolean): Promise<Array<PipelineOutput>> {
+        const sorted_steps = this.steps.sort((a, b) => a.stepIndex - b.stepIndex)
 
-            const result = await this.agent.run("summarize the execution process")
+        const step = sorted_steps.find((v) => v.status == "pending")
+        const stepIndex = sorted_steps.findIndex((v) => v.status == "pending")
 
-            return extractSummary(result.data)
+        if (end || !step) {
+
+            const content = await this.agent.run(prompt)
+
+            return content
 
         };
         const spec = await this.router.get(step.agent)
-        if(!spec) return null;
+        if (!spec) return [];
         const result = await step.process(spec.agent, prompt)
-        if(!(result.SIGNAL === EXECUTION_SIGNALS.STOP || result.SIGNAL === EXECUTION_SIGNALS.CONTINUE)){
-            return result
-        }
-        console.log("COMPLETED::", step.id)
+        const stringified_result = JSON.stringify(result)
         step.setStatus("completed")
 
-        const data_result = (()=>{
-            if (result.data instanceof String) return result.data;
-            const res: ModelOutput = result.data
-            
-            return res.toolCallResults?.at(0)?.content
-        })();
 
+        if (stepIndex == sorted_steps.length - 1) {
+
+            return await this.executeStep("Summarize the execution details", true)
+        }
 
         const data_prompt = `
         COMPLETED STEP: ${step.name}
@@ -345,19 +311,18 @@ export class PlannerExecutor {
         COMPLETION CRITERIA: ${step.completion_criteria}
         RESULTS:
         ${
-            data_result
+            stringified_result
         }
         `;
 
 
         const promptResult = await this.agent.run(`
-        use beginStep and determine a valid prompt for the next step in the sequence:
+        make use of the begin_step tool and provide a valid prompt for the next step in the sequence:
         ${data_prompt}    
         `)
 
-        const res = promptResult?.data?.toolCallResults?.at(0)?.content ?? promptResult?.data?.answer ?? "";
-        
-        // console.log("Res ::", promptResult?.data)
+        const res = (promptResult?.at(0)?.data as z.infer<typeof beginStep>)?.stepPrompt ?? promptResult?.at(0)?.data
+
         return await this.executeStep(res)
     }
 }
