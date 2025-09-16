@@ -1,6 +1,6 @@
 {
   "name": "ozone-model",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,6 +17,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "effect": "^3.14.14"
+    "effect": "^3.14.14",
+    "ozone-tool": "^0.0.1"
   }
 }

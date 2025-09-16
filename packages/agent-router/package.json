@@ -1,12 +1,12 @@
 {
   "name": "ozone-agent-router",
-  "version": "0.0.2",
+  "version": "0.0.5",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
-    "build": "tsup"
+    "build": "rm -rf dist && tsup"
   },
   "keywords": [],
   "author": "",
@@ -18,9 +18,8 @@
   },
   "dependencies": {
     "effect": "^3.14.14",
-    "ozone-builder": "^0.0.11",
-    "ozone-model": "^0.0.2",
-    "zod": "^3.24.3",
-    "zod-to-json-schema": "^3.24.5"
+    "ozone-builder": "^0.0.13",
+    "ozone-model": "^0.0.3",
+    "zod": "^4.1.8"
   }
 }

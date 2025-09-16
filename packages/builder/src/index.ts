@@ -1,9 +1,8 @@
-import { z, ZodAny } from "zod";
-import { Model, ModelInput, ModelOutput } from "ozone-model"
-import zodToJsonSchema from "zod-to-json-schema";
-import { Data, Effect, Either, pipe } from "effect";
+import { ModelInput, ModelOutput } from "ozone-model"
+import { Data, Effect, Either } from "effect";
 import { Router } from "ozone-router";
 import { TaggedError } from "effect/Data";
+import { Tool } from "ozone-tool";
 
 export enum EXECUTION_SIGNALS {
     CONTINUE = 0,
@@ -16,17 +15,24 @@ export enum EXECUTION_SIGNALS {
     AMBIGUOUS_TOOL_RESPONSE = 7,
     TOOL_ERROR = 8,
     AGENT_HANDOVER = 9,
-    INVALID_TOOLS_SELECTED = 10,
-    LOOP_END = 11,
-    LOOP_CONTINUE = 12,
-    LOOP_STOP = 13
+    INVALID_TOOLS_SELECTED = 10
 }
 
+export type PipelineOutput<ToolOutputType = any> = {
+    type: "string"
+    data: string
+} | {
+    type: "tool_response"
+    data: ToolOutputType
+} | {
+    type: "error"
+    data: TaggedStepResult
+}
 
 interface StepResult<T = any> {
     SIGNAL: EXECUTION_SIGNALS,
     data: T,
-    executor?: "Input" | "Next" | "Evaluator" | "StepGenerator" | "Loop"
+    executor?: "Input" | "Next"
 }
 
 export class ExecutionStackError extends TaggedError("ExecutionStackError")<{stepResult: TaggedStepResult}> {}
@@ -48,14 +54,6 @@ export class TaggedStepResult extends Data.TaggedClass("StepResult")<StepResult>
 
 export const createStepResult = (input: StepResult) => new TaggedStepResult(input)
 
-export type Tool<T = any> = {
-    name: string,
-    description: string,
-    schema: z.ZodTypeAny,
-    args: Record<string, any>,
-    handle: (args: T) => Promise<Record<string, unknown>>
-}
-
 type PromptLevel = `${number}`
 
 export class Prompt {
@@ -63,13 +61,13 @@ export class Prompt {
     instruction: string
     promptLevel: PromptLevel
     examples?: string
-    tools?: Array<Tool>
+    tools?: Array<Tool<any>>
     prePrompt?: string
 
     constructor(
         instruction: string, 
         examples?: string,
-        tools?: Array<Tool>,
+        tools?: Array<Tool<any>>,
         promptLevel: PromptLevel | undefined = `1`
     ) {
         this.instruction = instruction
@@ -111,7 +109,7 @@ export class Prompt {
             if ((data.toolResponses?.length ?? 0) == 0) {
                 agent.addChatHistory(data)
             } else {
-                const valid_tool_names = this.tools?.map(t => t.name) ?? []
+                const valid_tool_names = this.tools?.map(t => t.tool.name) ?? []
                 const invalid_tools = data.toolResponses?.filter(t => !valid_tool_names.includes(t.name))
 
                 if ((invalid_tools?.length ?? 0) > 0) {
@@ -125,11 +123,11 @@ export class Prompt {
                 const toolAndResponse: Array<{ tool: Tool<any>, response: { name: string, args: Record<string, any>, id?: string }, data: Record<string, any> }> = []
 
                 for (const tool of (this.tools ?? [])) {
-                    const matching_response = data.toolResponses?.find(t => t.name == tool.name)
+                    const matching_response = data.toolResponses?.find(t => t.name == tool.tool.name)
 
                     if (!matching_response) continue;
 
-                    const parsed = tool.schema.safeParse(matching_response.args)
+                    const parsed = tool.parse(matching_response.args)
 
                     if (!parsed.success) return new TaggedStepResult({
                         data: { message: "Unable to parse response" },
@@ -150,7 +148,7 @@ export class Prompt {
 
                     const tool_execution_effect = Effect.either(Effect.tryPromise({
                         try: async () => {
-                            const result = await tool.handle(toolData)
+                            const result = await tool.run(toolData)
                             return result
                         },
                         catch(error) {
@@ -179,7 +177,7 @@ export class Prompt {
                         onRight(right) {
                             data.toolCallResults?.push({
                                 id: response.id ?? "_tool",
-                                content: JSON.stringify(right),
+                                content: right,
                                 tool: response.name
                             })
                         },
@@ -198,96 +196,6 @@ export class Prompt {
     }
 }
 
-export class GlobalState {
-    __tag = "GlobalState" as const
-    private state: Map<string, unknown> = new Map()
-
-    constructor() { }
-
-    set(key: string, value: unknown) {
-        this.state.set(key, value)
-    }
-
-    get(key: string) {
-        this.state.get(key)
-    }
-}
-
-enum LoopType {
-    START = 1,
-    STOP = 2,
-    BREAK = 3,
-    CONTINUE = 4
-}
-
-export class Loop {
-    __tag = "Loop" as const
-    loop_type: LoopType
-    runs: number = 0
-
-    constructor(loop_type: LoopType) {
-        this.loop_type = loop_type
-    }
-
-
-}
-
-const reasonSchema = z.object({
-    reason: z.string()
-})
-class Evaluator {
-    __tag = "Evaluator" as const
-    promptLevel?: `${number}`
-    validationRequirement: string
-    examples?: string
-
-    constructor (validationRequirement: string, examples?: string, promptLevel: `${number}` | undefined = `1`) {
-        this.validationRequirement = validationRequirement
-        this.examples = examples
-        this.promptLevel = promptLevel
-    }
-
-    serialize(_input: ModelOutput) {
-        const input = _input.answer ?? {}
-        const content = `
-            <instructions>
-            ${this.validationRequirement}
-            </instructions>
-            ${this.examples ? `<examples>
-                ${this.examples}
-                </examples>` : ""}
-            <input>
-            ${
-                typeof input == "object" ? JSON.stringify(input) : input
-            }
-            </input>
-        `
-
-        const model_input: ModelInput = {
-            question: content,
-            tools: [
-                {
-                    name: "isCorrect",
-                    description: "Marks the input as correct and provides a reason for correctness",
-                    args: zodToJsonSchema(reasonSchema)
-                },
-                {
-                    name: "isWrong",
-                    description: "Marks the input as wrong and provides a reason for wrongness",
-                    args: zodToJsonSchema(reasonSchema)
-                },
-                // { // TODO: I guess we could just have a prompt to request this from the user before any serious processing begins
-                //     name: "isQuestion",
-                //     description: "Marks the input as a question that needs to be answered by the user, and provides a reason why",
-                //     args: zodToJsonSchema(reasonSchema)
-                // }
-            ],
-        }
-
-        return model_input
-    }
-}
-
 
 class Next {
     __tag = "Next" as const
@@ -302,84 +210,10 @@ class Next {
     }
 }
 
-const generatedStep = z.object({
-    agentName: z.string(),
-    agentInstruction: z.string()
-})
 
-const runSteps = z.object({
-    steps: z.array(generatedStep)
-})
-
-// returns additional stuff to add to the execution stack
-class StepGenerator {
-    __tag = "StepGenerator" as const
-    private instruction: string
-    promptLevel: PromptLevel
-    private examples?: string
-    agents: Array<AgentSpec>
-
-    constructor(
-        instruction: string,
-        agents: Array<AgentSpec>,
-        examples?: string,
-        promptLevel: PromptLevel | undefined = `1`
-    ) {
-        this.instruction = instruction
-        this.examples = examples
-        this.agents = agents
-        this.promptLevel = promptLevel
-    }
-
-    serialize(input: string) {
-
-
-
-        const content = `
-            <instructions>
-            ${this.instruction}
-            </instructions>
-
-            <agents>
-            ${this.agents?.map((agent) => {
-            return (
-                `
-                                <agent>
-                                    NAME: ${agent.name}
-                                    DESCRIPTION: ${agent.description}
-                                </agent>
-                                `
-            )
-        })
-            }
-            </agents>
-
-            ${this.examples ? `<examples>
-            ${this.examples}
-            </examples>` : ""}
-            <input>
-            ${typeof input == "object" ? JSON.stringify(input) : input}
-            <input>
-        `
-
-        const model_input: ModelInput = {
-            question: content,
-            tools: [
-                {
-                    args: zodToJsonSchema(runSteps),
-                    description: "Provide a sequential list of steps that need to be followed in order to complete a task or an inquiry or solve a problem.",
-                    name: "runSteps"
-                }
-            ]
-        }
-
-        return model_input
-    }
-}
-
-export class AgentBuilder<TOutput = any>{
+export class AgentBuilder {
     private router: Router
-    private executionStack: Array<Next | Prompt | Evaluator | StepGenerator> = []
+    private executionStack: Array<Next | Prompt> = []
     private maxRetries: number = 3
     private conversationHistory: Array<ModelOutput> = []
     private useHistory: boolean = false
@@ -496,22 +330,11 @@ export class AgentBuilder<TOutput = any>{
     prompt(args: {
         instruction: string, 
         examples?: string,
-        tools?: Array<Tool>,
+        tools?: Array<Tool<any>>,
         promptLevel?: PromptLevel
     }){
         this.executionStack.push(
             new Prompt(args.instruction, args.examples, args.tools, args.promptLevel)
-        )
-        return this
-    }
-
-    evaluate(args: {
-        validationRequirement: string, 
-        examples?: string, 
-        promptLevel: PromptLevel | undefined 
-    }){
-        this.executionStack.push(
-            new Evaluator(args.validationRequirement, args.examples, args.promptLevel)
         )
         return this
     }
@@ -523,42 +346,10 @@ export class AgentBuilder<TOutput = any>{
         return this
     }
 
-    stepGenerator(args: {
-        instruction: string,
-        agents: Array<AgentSpec>,
-        examples?: string,
-        promptLevel?: PromptLevel
-    }) {
-        const generator = new StepGenerator(
-            args.instruction,
-            args.agents,
-            args.examples,
-            args.promptLevel
-        )
-        this.executionStack.push(generator)
-        return this
-    }
-
-    private getNextEffect(router: Router, input: any, executor: Prompt | Next | Evaluator | StepGenerator | Loop, builder: AgentBuilder, step?: number, remaining_stack_steps?: Array<(Next | Prompt | Evaluator | StepGenerator | Loop)>) {
+    private getNextEffect(router: Router, input: any, executor: Prompt | Next, builder: AgentBuilder, step?: number, remaining_stack_steps?: Array<(Next | Prompt)>) {
         const chatHistory = builder.useHistory == false ? [] : builder.conversationHistory
 
-        switch(executor.__tag){
-            case "Evaluator": {
-                const model = router.route(executor.promptLevel ?? `1`)
-                const model_input = executor.serialize(input)
-                return model.ask(model_input, chatHistory).pipe(
-                    Effect.andThen((modelOutput) => Effect.try(() => {
-                        modelOutput.role = "assistant"
-                        return modelOutput
-                    })),
-                    Effect.andThen((modelOutput)=> Effect.try(()=>{
-                        return {
-                            output: modelOutput,
-                            input
-                        }
-                    }))
-                )
-            }
+        switch (executor.__tag) {
             case "Input": {
                 const model = router.route(executor.promptLevel)
                 const model_input = executor.serialize(input)
@@ -583,29 +374,6 @@ export class AgentBuilder<TOutput = any>{
                         }))
                     )
             }
-            case "StepGenerator": {
-                console.log("generator Input::", input)
-                const model = router.route(executor.promptLevel)
-                const model_input = executor.serialize(input)
-
-                return model.ask(model_input, chatHistory).pipe(
-                    Effect.andThen((modelOutput) => Effect.try(() => {
-                        modelOutput.role = "assistant"
-                        return modelOutput
-                    }))
-                )
-            }
-            case "Loop": {
-                const loop_steps = remaining_stack_steps?.reduce((loop_steps_arr, curr) => {
-                    const last_step = loop_steps_arr.at(-1)
-                    if (!last_step || !(last_step?.__tag == "Loop" && (last_step.loop_type == LoopType.STOP || last_step.loop_type == LoopType.BREAK))) {
-                        return loop_steps_arr.concat(curr)
-                    }
-                    return loop_steps_arr
-                }, [] as Array<(Next | Prompt | Evaluator | StepGenerator | Loop)>)
-
-                // const runner = Effec
-            }
             default: {
                 return Effect.fail(new ExecutionStackError({
                     stepResult: new TaggedStepResult({
@@ -620,7 +388,7 @@ export class AgentBuilder<TOutput = any>{
 
     async runStack(
         prevStep: TaggedStepResult,
-        stack: Array<Next | Prompt | Evaluator | StepGenerator>,
+        stack: Array<Next | Prompt>,
         step: number | undefined = 1
     ): Promise<TaggedStepResult> {
         prevStep.setStep(step)
@@ -650,7 +418,7 @@ export class AgentBuilder<TOutput = any>{
         }
 
         const next = stack.pop()!
-        const remaining_stack_steps = [...stack]
+
         const step_effect: Effect.Effect<ModelOutput | {output: ModelOutput, input: any} | TaggedStepResult, ExecutionStackError | any> = this.getNextEffect(this.router, prevStep.data, next, this, step)
         const result = await Effect.runPromise(Effect.either(
                 step_effect
@@ -725,6 +493,7 @@ export class AgentBuilder<TOutput = any>{
     async run(
         triggerPrompt: string
     ) {
+        const lastHistoryIndex = this.conversationHistory.length;
         const reversedQueue = [...this.executionStack].reverse() // reverse order so that we can use pop when we run the stack
         // trigger history update with user's prompt
         if (this.onChatHistoryUpdateHandler) {
@@ -746,14 +515,38 @@ export class AgentBuilder<TOutput = any>{
             SIGNAL: EXECUTION_SIGNALS.CONTINUE
         })
         const result = await this.runStack(initialStepResult, reversedQueue, undefined)
+        const split = lastHistoryIndex
+        const before = this.conversationHistory.slice(0, split)
+        const after = this.conversationHistory.slice(split)
+        const updated = [
+            ...before,
+            {
+                role: "user",
+                answer: triggerPrompt
+            } as ModelOutput,
+            ...after
+        ]
+        this.conversationHistory = updated
 
-        const updatedHistoryWithUserPrompt = [{
-            role: "user",
-            answer: triggerPrompt
-        } as ModelOutput, ...this.conversationHistory]
-        this.conversationHistory = updatedHistoryWithUserPrompt
+        const content: Array<PipelineOutput> = []
+        const data = result.data as ModelOutput
+        if ((data.answer?.length ?? 0) > 0) {
+            content.push({
+                type: "string",
+                data: data?.answer ?? ""
+            })
+        }
 
-        return result
+        if ((data.toolCallResults?.length ?? 0) > 0) {
+            for (const response of (data.toolCallResults ?? [])) {
+                content.push({
+                    type: "tool_response",
+                    data: response.content
+                })
+            }
+        }
+
+        return content
     }
 
 }

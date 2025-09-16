@@ -14,17 +14,14 @@ importers:
         specifier: ^3.14.14
         version: 3.14.14
       ozone-builder:
-        specifier: ^0.0.11
-        version: 0.0.11
+        specifier: ^0.0.13
+        version: 0.0.13
       ozone-model:
-        specifier: ^0.0.2
-        version: 0.0.2
+        specifier: ^0.0.3
+        version: 0.0.3
       zod:
-        specifier: ^3.24.3
-        version: 3.24.3
-      zod-to-json-schema:
-        specifier: ^3.24.5
-        version: 3.24.5(zod@3.24.3)
+        specifier: ^4.1.8
+        version: 4.1.8
     devDependencies:
       '@types/node':
         specifier: ^22.14.1
@@ -42,17 +39,17 @@ importers:
         specifier: ^3.14.14
         version: 3.14.14
       ozone-model:
-        specifier: ^0.0.2
-        version: 0.0.2
+        specifier: ^0.0.3
+        version: 0.0.3
       ozone-router:
-        specifier: 0.0.2
-        version: 0.0.2
+        specifier: 0.0.4
+        version: 0.0.4
+      ozone-tool:
+        specifier: ^0.0.1
+        version: 0.0.1
       zod:
-        specifier: ^3.24.3
-        version: 3.24.3
-      zod-to-json-schema:
-        specifier: ^3.24.5
-        version: 3.24.5(zod@3.24.3)
+        specifier: ^4.1.8
+        version: 4.1.8
     devDependencies:
       '@types/node':
         specifier: ^22.14.1
@@ -103,6 +100,9 @@ importers:
       effect:
         specifier: ^3.14.14
         version: 3.14.14
+      ozone-tool:
+        specifier: ^0.0.1
+        version: 0.0.1
     devDependencies:
       '@types/node':
         specifier: ^22.14.1
@@ -117,26 +117,26 @@ importers:
   packages/planner:
     dependencies:
       ozone-agent-router:
-        specifier: ^0.0.2
-        version: 0.0.2
+        specifier: ^0.0.5
+        version: 0.0.5
       ozone-builder:
-        specifier: ^0.0.11
-        version: 0.0.11
+        specifier: ^0.0.13
+        version: 0.0.13
       ozone-model:
-        specifier: ^0.0.2
-        version: 0.0.2
+        specifier: ^0.0.3
+        version: 0.0.3
       ozone-router:
-        specifier: ^0.0.2
-        version: 0.0.2
+        specifier: ^0.0.4
+        version: 0.0.4
+      ozone-tool:
+        specifier: ^0.0.1
+        version: 0.0.1
       tsup:
         specifier: ^8.4.0
         version: 8.4.0(typescript@5.8.3)
       zod:
-        specifier: ^3.24.3
-        version: 3.24.3
-      zod-to-json-schema:
-        specifier: ^3.24.5
-        version: 3.24.5(zod@3.24.3)
+        specifier: ^4.1.8
+        version: 4.1.8
     devDependencies:
       '@types/node':
         specifier: ^22.14.1
@@ -148,8 +148,8 @@ importers:
         specifier: ^3.14.14
         version: 3.14.14
       ozone-model:
-        specifier: ^0.0.2
-        version: 0.0.2
+        specifier: ^0.0.3
+        version: 0.0.3
     devDependencies:
       '@types/node':
         specifier: ^22.14.1
@@ -203,6 +203,22 @@ importers:
       typescript:
         specifier: ^5.8.3
         version: 5.8.3
+
+  packages/tool:
+    dependencies:
+      effect:
+        specifier: ^3.14.14
+        version: 3.14.14
+      zod:
+        specifier: ^4.1.8
+        version: 4.1.8
+    devDependencies:
+      '@types/node':
+        specifier: ^22.14.1
+        version: 22.14.1
+      tsup:
+        specifier: ^8.4.0
+        version: 8.4.0(typescript@5.8.3)
 
 packages:
 
@@ -870,11 +886,11 @@ packages:
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
 
-  ozone-agent-router@0.0.2:
-    resolution: {integrity: sha512-ga2R4jWqeoOjq7xJ0IASDrzMQz0F7Iv/3gu/btPdhxopzl/cSHthXl9y05kvfVW4ogy32UOfRMhjhpP0Jc1qIg==}
+  ozone-agent-router@0.0.5:
+    resolution: {integrity: sha512-PoSorBiaWka03YNdpQZjs2g910qhiZfIJsjCFR0BDO6E5G6lu4miT3v42dot4xyxzqA917UAhNjtQ5UFhlryuw==}
 
-  ozone-builder@0.0.11:
-    resolution: {integrity: sha512-Yai2N0edBxA/EdT/V0OI5geUgmIdObdAldZHwGAE1HI4U4Ita+V+mrIFJ7Vn7hNOrA45bvrfd/kOBDgAUw7pKQ==}
+  ozone-builder@0.0.13:
+    resolution: {integrity: sha512-Q47u1oq+DokSRgxys4CdvrHTfqBBD1Xrkx7DV2adbFDcyNrIQB24v4cz2yAPaUGp2vRHctm04OPTRUqNCZ9KRg==}
 
   ozone-builder@0.0.2:
     resolution: {integrity: sha512-EZfpvveewaxfd1X2FFpWDgdq18e/ndIEKSq2hh9YJ8zDWs4LothlaViG8lGUb7aqn6YDLPd+DxyfxM2sFGrZ9g==}
@@ -882,14 +898,17 @@ packages:
   ozone-model@0.0.1:
     resolution: {integrity: sha512-oKCZFwK0bH+DZT32lGucvsJnr9JjjeYMSzQ0PkraaLdHjzI/hVq5TQEU4OeVM1cjvbJ8cdnQ5CqAi1YbjPLU/w==}
 
-  ozone-model@0.0.2:
-    resolution: {integrity: sha512-UPTlaHugdDSOp6277LTA1cITYaCA+y+lOGrkEjKXGo+taZ4AK5rX2+GLJ1qYfvX8sdpE/wwjZiA4DfU0hEs3kQ==}
+  ozone-model@0.0.3:
+    resolution: {integrity: sha512-uTbazT9l5nuN30Tw6jG6FKqgsT2QVsxoirtC9s33JsSidN+QPCtZQ7wiRiI6xpTVNvQ8Jhwcm/wey4veW2eQag==}
 
   ozone-router@0.0.1:
     resolution: {integrity: sha512-0hYfwdoeSqxcN15UliK/eaTZXlzffnivMdC45zk9emURtZJPvcEJ8AP3z56m6kevb+PSgAj8lbyoNQt3bTsw1A==}
 
-  ozone-router@0.0.2:
-    resolution: {integrity: sha512-vH7zt6bV4c5by9ibIf4dBjzBkOt673QrGp3CTuUvrtFVM9YJl/xtOXElJVTw/7CxeiSHQQvE5EEC1iRBBgNhdQ==}
+  ozone-router@0.0.4:
+    resolution: {integrity: sha512-PxuHkC/YUKx5J4NZDYO5kmJZZXYkWb+YcB/cHTkMta0UFGmOieKI/CO4lOH1tWY1FlDRWqz+LWfKUUtBKBCqFw==}
+
+  ozone-tool@0.0.1:
+    resolution: {integrity: sha512-9O4Pmb4JK0f/7V07/SwYNT9OQ9LI0Hy1mOm9y9atUGsnmqY1AIaE7j/nlnlg6SSVFmXUQemFz8Fp7j2eqkOosw==}
 
   package-json-from-dist@1.0.1:
     resolution: {integrity: sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw==}
@@ -1153,6 +1172,9 @@ packages:
 
   zod@3.24.3:
     resolution: {integrity: sha512-HhY1oqzWCQWuUqvBFnsyrtZRhyPeR7SUGv+C4+MsisMuVfSPx8HpwWqH8tRahSlt6M3PiFAcoeFhZAqIXTxoSg==}
+
+  zod@4.1.8:
+    resolution: {integrity: sha512-5R1P+WwQqmmMIEACyzSvo4JXHY5WiAFHRMg+zBZKgKS+Q1viRa0C1hmUKtHltoIFKtIdki3pRxkmpP74jnNYHQ==}
 
 snapshots:
 
@@ -1727,21 +1749,20 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  ozone-agent-router@0.0.2:
+  ozone-agent-router@0.0.5:
     dependencies:
       effect: 3.14.14
-      ozone-builder: 0.0.11
-      ozone-model: 0.0.2
-      zod: 3.24.3
-      zod-to-json-schema: 3.24.5(zod@3.24.3)
+      ozone-builder: 0.0.13
+      ozone-model: 0.0.3
+      zod: 4.1.8
 
-  ozone-builder@0.0.11:
+  ozone-builder@0.0.13:
     dependencies:
       effect: 3.14.14
-      ozone-model: 0.0.2
-      ozone-router: 0.0.2
-      zod: 3.24.3
-      zod-to-json-schema: 3.24.5(zod@3.24.3)
+      ozone-model: 0.0.3
+      ozone-router: 0.0.4
+      ozone-tool: 0.0.1
+      zod: 4.1.8
 
   ozone-builder@0.0.2:
     dependencies:
@@ -1755,19 +1776,25 @@ snapshots:
     dependencies:
       effect: 3.14.14
 
-  ozone-model@0.0.2:
+  ozone-model@0.0.3:
     dependencies:
       effect: 3.14.14
+      ozone-tool: 0.0.1
 
   ozone-router@0.0.1:
     dependencies:
       effect: 3.14.14
       ozone-model: 0.0.1
 
-  ozone-router@0.0.2:
+  ozone-router@0.0.4:
     dependencies:
       effect: 3.14.14
-      ozone-model: 0.0.2
+      ozone-model: 0.0.3
+
+  ozone-tool@0.0.1:
+    dependencies:
+      effect: 3.14.14
+      zod: 4.1.8
 
   package-json-from-dist@1.0.1: {}
 
@@ -2061,3 +2088,5 @@ snapshots:
       zod: 3.24.3
 
   zod@3.24.3: {}
+
+  zod@4.1.8: {}
