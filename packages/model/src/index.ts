@@ -1,22 +1,16 @@
 import {Effect} from "effect";
+import { Tool } from "ozone-tool";
 
 export interface ModelInput {
     question: string;
-    toolName?: string;
-    toolDescription?: string;
-    tool?: Record<string, any> | undefined,
-    tools?: Array<{
-        name: string,
-        description: string,
-        args: Record<string, any>
-    }>
+    tools?: Array<Tool<any>>
 }
 
 export interface ModelOutput {
     role?: "user" | "assistant" | "system"
     answer: string | undefined;
     toolResponses?: Array<{ name: string, args: Record<string, any>, id?: string }> | undefined
-    toolCallResults?: Array<{ id: string, tool: string, content: string }>
+    toolCallResults?: Array<{ id: string, tool: string, content: Record<string, any> }>
 }
 
 export class Model {

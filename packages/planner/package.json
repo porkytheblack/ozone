@@ -1,24 +1,24 @@
 {
   "name": "ozone-planner",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsup"
+    "build": "rm -rf dist && tsup"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "ozone-agent-router": "^0.0.2",
-    "ozone-builder": "^0.0.11",
-    "ozone-model": "^0.0.2",
-    "ozone-router": "^0.0.2",
+    "ozone-agent-router": "^0.0.5",
+    "ozone-builder": "^0.0.13",
+    "ozone-model": "^0.0.3",
+    "ozone-router": "^0.0.4",
+    "ozone-tool": "^0.0.1",
     "tsup": "^8.4.0",
-    "zod": "^3.24.3",
-    "zod-to-json-schema": "^3.24.5"
+    "zod": "^4.1.8"
   },
   "devDependencies": {
     "@types/node": "^22.14.1"
